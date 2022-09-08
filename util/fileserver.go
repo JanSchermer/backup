@@ -22,7 +22,7 @@ func GetFileServer(port int, cert string, key string) FileServer {
 	} else {
 		go server.ListenAndServe()
 	}
-	auths := GetDatabase("auths.db", "$")
+	auths := GetDatabase("auths.txt", ":")
 	fileServer := FileServer{port, server, auths}
 	server.Handler = http.HandlerFunc(fileServer.Recieve)
 	return fileServer
