@@ -16,6 +16,7 @@ type Client struct {
 	waitGroup     sync.WaitGroup
 	uploaderCount int
 	writeChan     chan string
+	errorChan     chan error
 	dbs           map[string]util.Database
 	aes           util.AES
 }
@@ -47,12 +48,21 @@ func GetClient(folder string, config string) Client {
 	iterator := util.GetIterator(folder)
 	uploader := util.GetUploader(url, auth, aes)
 	writeChan := make(chan string, 100)
+	errorChan := make(chan error)
 	dbs := make(map[string]util.Database)
-	return Client{folder, config, iterator, uploader, sync.WaitGroup{}, 0, writeChan, dbs, aes}
+	return Client{folder, config, iterator, uploader, sync.WaitGroup{}, 0, writeChan, errorChan, dbs, aes}
 }
 
 func (c *Client) Start() {
 	for c.iterator.HasNext() {
+		select {
+		case err := <-c.errorChan:
+			if err == nil {
+				return
+			}
+			panic(err)
+		default:
+		}
 		select {
 		case file := <-c.writeChan:
 			c.ReciveResults(file, c.GetDb(file))
@@ -102,12 +112,12 @@ func (c *Client) StartUploader(file string, db util.Database) {
 	if db.Get(file) != hash {
 		c.waitGroup.Add(1)
 		c.uploaderCount++
-		go c.UploadFile(file, hash)
+		go c.UploadFile(file, hash, c.errorChan)
 	}
 }
 
-func (c *Client) UploadFile(file string, hash string) {
-	c.uploader.Upload(file, hash)
+func (c *Client) UploadFile(file string, hash string, errorChan chan error) {
+	c.uploader.Upload(file, hash, errorChan)
 	c.writeChan <- file
 	c.writeChan <- hash
 	c.uploaderCount--
